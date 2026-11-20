@@ -28,6 +28,7 @@ python -m recur --rule "FREQ=WEEKLY;BYDAY=TU,TH" --start 2026-01-05T19:00:00+08:
 - 展开过程中若越过 `9999-12-31`（或早于 `0001-01-01`）→ `date_out_of_range`。
 - 校验顺序固定：先解析参数与各键的**值**，再校验 `COUNT` 与 `--until` 的**互斥**。因此 `COUNT=0` 且同时给 `--until` 时报 `invalid_count`，不是 `invalid_args`。
 - 任何未被上述错误码覆盖的内部异常，一律映射为 `internal_error`，退出码 2。
+- 但 `internal_error` 只允许出现在**输入本身合法**却仍失败的兜底情况（视为缺陷，需修）。合法 ISO 8601 输入（含 `+14:00`/`-12:00` 等极端偏移、`0001-01-01`/`9999-12-31` 等边界日期）必须给出确定结果：要么成功，要么 `date_out_of_range` / `invalid_*`。
 
 ## 输出
 
