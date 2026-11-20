@@ -1,0 +1,15 @@
+{
+  "task": "T3c",
+  "agent": "claude",
+  "status": "done",
+  "changed_files": [
+    "recur/cli.py",
+    "handoff/result-T3.json"
+  ],
+  "verify": {
+    "command": "python -m unittest discover -s tests",
+    "exit_code": 0,
+    "summary": "Ran 31 tests in 1.659s — OK（31 tests，含 11 csvstat + 20 recur；tests/ 未作任何修改）"
+  },
+  "notes": "修复 Codex 第三轮唯一一条：[中] recur/cli.py:255 `until.astimezone(start.tzinfo)` 在 0001/9999 日期边界做极端偏移换算时抛 OverflowError，被兜底成 internal_error。改法：不再把 until 折算成 start 偏移下的日历日；提前退出改为用 `_with_time(start, monday)`（本周周一在 start 偏移下的时刻）与 until 直接比较 aware datetime。该时刻不晚于本周任何候选，所以它晚于 until 时整周及以后都无需再看，剪枝语义不变且更精确；比较由 UTC 时刻决定，直接构造与比较 datetime 均不涉及 astimezone，因此不可能再溢出。循环终止性不变：monday 由 _add_days 计算，越过 date.max 返回 None，有 until 则结束、无 until 则 date_out_of_range。硬性验收逐条实测：[1] 复现命令 → exit 0，occurrences 恰为 [\"9999-12-31T00:00:00+14:00\"]。[2] tests 31 OK，未改 tests/。[3a] --start 0001-01-01T00:00:00-12:00 --until 0001-01-01T00:00:00+14:00（WEEKLY;BYDAY=FR）→ exit 0，occurrences=[]（start 是周一，本周五的候选在时刻上晚于 until，无合法候选）。[3b] --rule WEEKLY;BYDAY=MO,SU --start 9999-12-31T23:59:59+14:00 --count 3 → exit 2，code=date_out_of_range（周日的候选已越过 9999-12-31 且无 until，属规格允许的确定性错误码；不是 internal_error）。[3c] --rule DAILY --start 0001-01-01T00:00:00+14:00 --until 0001-01-02T00:00:00-12:00 → exit 0，返回 0001-01-01/02/03T00:00:00+14:00 三条（until 含端点，按日历日推进）。以上所有命令 stderr 均为 0 字节、无 traceback、无空 stdout；退出码只有 0/2。[4] 既有行为回归实测：--count 默认 10 未动；until 闭区间（SU 候选恰在 until 前一天、until 当天两种情况均正确包含）；偏移全程保持 --start 的偏移；WEEKLY;BYDAY 每周按日历日推进；INTERVAL/COUNT 范围校验与校验优先级代码未触及；正常用例 2026-01-05T19:00+08:00 BYDAY=TU,TH --count 4 输出与 README 示例一致。未改 recur/README.md、csvstat/、AGENTS.md、tests/ 或任务卡。未发现规格与冻结测试矛盾。"
+}
