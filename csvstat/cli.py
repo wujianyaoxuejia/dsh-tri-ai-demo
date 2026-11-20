@@ -10,6 +10,7 @@ import json
 import math
 import sys
 from collections import Counter
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import Any, Sequence
 
 # 缺失值 token（比较前先去除前后空白并转小写）。
@@ -36,6 +37,36 @@ def _to_float(value: str) -> float | None:
         return None
     # 非有限值（nan/inf）无法产出可序列化的统计量，按文本处理。
     return number if math.isfinite(number) else None
+
+
+def _mean(numbers: Sequence[float]) -> float:
+    """计算均值，避免求和溢出。
+
+    先按最大绝对值缩放再求和：每项都在 [-1, 1] 内，`math.fsum` 的结果
+    不会超过项数，乘回 scale 后仍在浮点范围内，因此 (1e308, 1e308)
+    也能得到 1e308 而不是 inf。
+    """
+    scale = max(abs(number) for number in numbers)
+    if scale == 0.0:
+        return 0.0
+    scaled_mean = math.fsum(number / scale for number in numbers) / len(numbers)
+    return scaled_mean * scale
+
+
+def _round_half_up(value: float) -> float:
+    """按"四舍五入"（half away from zero）保留 2 位小数。
+
+    `round` 使用银行家舍入（1.125 -> 1.12），不符合 README 承诺；
+    这里用 Decimal 的 ROUND_HALF_UP。`repr` 取最短往返表示，使 1.125
+    这类在二进制中恰好可表示的值按十进制书写形式舍入。
+    """
+    with localcontext() as ctx:
+        # 1e308 舍入到 2 位小数需要约 310 位有效数字，默认 28 位不够。
+        ctx.prec = 400
+        rounded = Decimal(repr(value)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+    return float(rounded)
 
 
 def _summarize_column(name: str, values: Sequence[str]) -> dict[str, Any]:
@@ -71,7 +102,7 @@ def _summarize_column(name: str, values: Sequence[str]) -> dict[str, Any]:
     if numeric:
         summary["min"] = min(numbers)
         summary["max"] = max(numbers)
-        summary["mean"] = round(sum(numbers) / len(numbers), 2)
+        summary["mean"] = _round_half_up(_mean(numbers))
     else:
         counts = Counter(texts)
         summary["unique"] = len(counts)

@@ -1,0 +1,12 @@
+{
+  "task": "T2",
+  "agent": "claude",
+  "status": "done",
+  "changed_files": ["csvstat/cli.py"],
+  "verify": {
+    "command": "python -m unittest discover -s tests -v",
+    "exit_code": 0,
+    "summary": "Ran 11 tests in 0.726s, OK (11 passed)"
+  },
+  "notes": "两处修复都在 csvstat/cli.py，未触碰 tests/README/AGENTS，其余行为保持不变。\n\n1) 均值溢出：新增 _mean()。先取 scale = max(abs(x))，用 math.fsum(x / scale) / n 再乘回 scale。缩放后每一项都在 [-1, 1]，fsum 结果不超过项数 n，因此中间量和最终 mean 都不超过原输入的最大有限值，不可能产生 inf；scale 为 0 时直接返回 0.0。实测 (1e308, 1e308) -> 1e308；最大有限浮点重复 3 次、7 次均保持有限，退出码 0。\n\n2) 舍入方式：新增 _round_half_up()，用 Decimal(repr(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)，即 half away from zero 的四舍五入；localcontext 精度设为 400，因为 1e308 量化到 2 位小数需要约 310 位有效数字，默认 28 位会抛 InvalidOperation。实测单值 1.125 -> 1.13，-1.125 -> -1.13，原契约 1/2/4 -> 2.33 仍通过。\n\n额外自测：用 parse_constant 抛错的严格 JSON 解析器检查 9 组极端输入（两个/多个 1e308、最大浮点 x3/x7、混合正负巨值、次正规数、零、1e308 与 1e-308 混合），全部 exit=0 且 stdout 为合法标准 JSON，无 Infinity/NaN。\n\n遗留/假设：舍入基于 repr(value) 的最短十进制往返表示，因此 2.675 这类二进制不精确的值按用户可见的十进制写法四舍五入为 2.68；这是对 README“四舍五入”的理解，如需按二进制精确值舍入请人类裁决。"
+}
