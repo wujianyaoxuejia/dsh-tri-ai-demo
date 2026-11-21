@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>坦克大乱斗 · 回放</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <header class="brand">
+      <h1>坦克大乱斗</h1>
+      <p class="run-name" id="runName">runs/tb-001</p>
+    </header>
+
+    <section class="panel panel-grow">
+      <div class="panel-head">
+        <h2>对局列表</h2>
+        <span class="count" id="matchCount">—</span>
+      </div>
+      <div class="match-list" id="matchList">
+        <p class="placeholder">正在读取数据…</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>总排名</h2>
+      </div>
+      <div class="standings" id="standings">
+        <p class="placeholder">—</p>
+      </div>
+    </section>
+
+    <footer class="side-foot" id="status">—</footer>
+  </aside>
+
+  <main class="stage">
+    <header class="topbar">
+      <div class="map-badge" id="mapName">—</div>
+      <div class="meta" id="matchMeta">
+        <span>选择左侧对局开始回放</span>
+      </div>
+    </header>
+
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="screen"></canvas>
+      <div class="canvas-hint" id="canvasHint">选择左侧对局开始回放</div>
+    </div>
+
+    <div class="controls">
+      <button id="playBtn" class="primary" type="button" disabled>播放</button>
+      <button id="prevBtn" type="button" disabled>上一帧</button>
+      <button id="nextBtn" type="button" disabled>下一帧</button>
+      <input id="seek" type="range" min="0" max="0" value="0" step="1" disabled aria-label="播放进度">
+      <span class="ticklabel" id="tickLabel">0 / 0</span>
+      <div class="speeds" id="speeds" role="group" aria-label="播放速度">
+        <button type="button" data-speed="0.5">0.5×</button>
+        <button type="button" data-speed="1" class="active">1×</button>
+        <button type="button" data-speed="2">2×</button>
+        <button type="button" data-speed="4">4×</button>
+      </div>
+    </div>
+  </main>
+</div>
+<noscript>此页面需要启用 JavaScript 才能播放回放。</noscript>
+<script src="viewer.js"></script>
+</body>
+</html>
