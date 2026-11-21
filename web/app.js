@@ -74,7 +74,8 @@ const PART_DEFS = [
     params: [['规格', 'M1200×4000'], ['数量', '8,192'], ['预紧力', '9,600 kN']],
     desc: '以超高压预紧力将基座环与地基锁死的巨型锚固螺栓群。',
     anchor: [-4700, 500, 1710],
-    explodeDir: [0.55, 0.65, -0.45],
+    // explodeDir 水平分量与 anchor 径向同向
+    explodeDir: [-0.85, 0.65, 0.31],
     explodeDistance: 2600,
     build: buildBolts,
   },
@@ -129,7 +130,8 @@ const PART_DEFS = [
     params: [['片数', '64'], ['单片面积', '1.2×10⁵ m²']],
     desc: '将外壳废热辐射排散的径向高比表面积鳍片。',
     anchor: [-4500, 7800, 0],
-    explodeDir: [0.62, 0.3, -0.72],
+    // explodeDir 水平分量与 anchor 径向同向
+    explodeDir: [-0.9, 0.3, 0],
     explodeDistance: 2900,
     build: buildHeatSinkFins,
   },
@@ -140,7 +142,8 @@ const PART_DEFS = [
     params: [['直径', '3,600 m'], ['舱室', '2,400 间']],
     desc: '供检修人员环绕反应堆作业的三层密闭环廊。',
     anchor: [-1800, 5050, 0],
-    explodeDir: [0.85, 0.3, 0.42],
+    // explodeDir 水平分量与 anchor 径向同向
+    explodeDir: [-0.9, 0.3, 0],
     explodeDistance: 2400,
     build: buildControlRing,
   },
@@ -188,6 +191,8 @@ let ignitionLight = null;
 let reactorLight = null;
 
 let groundMat = null;
+let contactShadow = null;
+let contactShadowMat = null;
 let pitMat = null;
 let rimMat = null;
 let gridCoarse = null;
@@ -212,6 +217,17 @@ let launchRingMat = null;
 let outlineHullMat = null;
 let outlineCageMat = null;
 let outlineNodes = [];
+let lightOutlineMat = null;
+const lightOutlineMeshes = [];
+
+const cameraFit = {
+  active: false,
+  explodedCount: 0,
+  baseDistance: 0,
+  baseTargetY: 0,
+  lastUserZoom: -10,
+  goal: 0,
+};
 
 const parts = [];
 const partById = new Map();
@@ -231,6 +247,13 @@ const _labelWorld = new THREE.Vector3();
 const _labelCamera = new THREE.Vector3();
 const _labelProjected = new THREE.Vector3();
 const _shakeOffset = new THREE.Vector3();
+const cameraBasePosition = new THREE.Vector3();
+const _fitBox = new THREE.Box3();
+const _fitBoxPart = new THREE.Box3();
+const _fitSphere = new THREE.Sphere();
+const _fitSize = new THREE.Vector3();
+const _fitCenter = new THREE.Vector3();
+const _fitDirection = new THREE.Vector3();
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 const ZERO = new THREE.Vector3();
@@ -422,7 +445,23 @@ function initTextures() {
   glow.wrapS = THREE.ClampToEdgeWrapping;
   glow.wrapT = THREE.ClampToEdgeWrapping;
 
-  textures = { metal, hazard, glow };
+  // 浅色模式下的地面接触影（径向渐变，本地 CanvasTexture 生成）
+  const contact = makeTexture((ctx, size) => {
+    const gradient = ctx.createRadialGradient(
+      size / 2, size / 2, size * 0.04,
+      size / 2, size / 2, size * 0.5,
+    );
+    gradient.addColorStop(0, 'rgba(18,26,34,0.62)');
+    gradient.addColorStop(0.45, 'rgba(18,26,34,0.34)');
+    gradient.addColorStop(0.75, 'rgba(18,26,34,0.1)');
+    gradient.addColorStop(1, 'rgba(18,26,34,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+  }, 256);
+  contact.wrapS = THREE.ClampToEdgeWrapping;
+  contact.wrapT = THREE.ClampToEdgeWrapping;
+
+  textures = { metal, hazard, glow, contact };
 }
 
 function makeEnvironment(theme) {
@@ -587,7 +626,11 @@ function addInstances(part, geometry, material, count, fill, options = {}) {
     }
   }
   mesh.instanceMatrix.needsUpdate = true;
-  if (tinted && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  if (tinted && mesh.instanceColor) {
+    mesh.instanceColor.needsUpdate = true;
+    // 构建时留一份原始实例色，供深色主题精确还原（避免来回切换漂移）
+    mesh.userData.baseInstanceColor = mesh.instanceColor.array.slice();
+  }
   mesh.frustumCulled = false;
   mesh.userData.partId = part.id;
   if (options.name) mesh.name = options.name;
@@ -1790,6 +1833,22 @@ function buildGround() {
   ground.position.y = -150;
   scene.add(ground);
 
+  // 浅色白模的接触影：径向渐变压暗发射台周围地面
+  contactShadowMat = new THREE.MeshBasicMaterial({
+    map: textures.contact,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+    color: 0xffffff,
+  });
+  const contactGeometry = new THREE.PlaneGeometry(22000, 22000);
+  contactGeometry.rotateX(-Math.PI / 2);
+  contactShadow = new THREE.Mesh(contactGeometry, contactShadowMat);
+  contactShadow.position.y = -145;
+  contactShadow.visible = false;
+  contactShadow.renderOrder = 1;
+  scene.add(contactShadow);
+
   // 点火时从发射台中心溢出的橙色辉光
   padGlowMat = new THREE.MeshBasicMaterial({
     map: textures.glow,
@@ -2031,6 +2090,40 @@ function buildOutlineMaterials() {
     depthWrite: false,
     fog: false,
   });
+
+  // 浅色模式下常驻的极淡 backside 描边，用于分离形体
+  lightOutlineMat = new THREE.MeshBasicMaterial({
+    color: 0x33404d,
+    side: THREE.BackSide,
+    transparent: true,
+    opacity: 0.16,
+    depthWrite: false,
+    fog: false,
+  });
+}
+
+function buildLightOutlines() {
+  if (!lightOutlineMat) return;
+  const targets = [];
+  parts.forEach((part) => {
+    part.root.traverse((obj) => {
+      if (!obj.isMesh || obj.isInstancedMesh) return;
+      if (obj.userData.isOutline) return;
+      if (obj.material && obj.material.transparent) return;
+      targets.push(obj);
+    });
+  });
+  targets.forEach((mesh) => {
+    const shell = new THREE.Mesh(mesh.geometry, lightOutlineMat);
+    shell.scale.setScalar(1.012);
+    shell.userData.isOutline = true;
+    shell.userData.isLightOutline = true;
+    shell.raycast = () => {};
+    shell.renderOrder = 3;
+    shell.visible = false;
+    mesh.add(shell);
+    lightOutlineMeshes.push(shell);
+  });
 }
 
 /* --------------------------------------------------------------------------
@@ -2072,6 +2165,8 @@ function buildParts() {
       .multiplyScalar(def.explodeDistance);
     part.labelAnchor = new THREE.Vector3(def.anchor[0], def.anchor[1], def.anchor[2]);
     def.build(part);
+    // 构建时的局部包围盒；拆解动画中只需加上 root.position 即可得到当前包围盒
+    part.localBox = new THREE.Box3().setFromObject(part.root);
     scene.add(part.root);
     parts.push(part);
     partById.set(part.id, part);
@@ -2198,6 +2293,13 @@ function clearSelection() {
 function setExploded(part, exploded, delay) {
   if (part.exploded === exploded) return;
   part.exploded = exploded;
+  cameraFit.explodedCount += exploded ? 1 : -1;
+  if (exploded && cameraFit.explodedCount === 1) {
+    // 第一次进入拆解态时记下相机距离与视点高度，复位时平滑回到这里
+    cameraFit.baseDistance = cameraDistance();
+    cameraFit.baseTargetY = controls.target.y;
+  }
+  cameraFit.active = true;
   part.anim.from.copy(part.root.position);
   part.anim.to.copy(exploded ? part.explodeOffset : ZERO);
   part.anim.t = 0;
@@ -2225,6 +2327,82 @@ function updateExplode() {
     part.root.position.lerpVectors(anim.from, anim.to, eased);
     if (anim.t >= 1) anim.active = false;
   });
+}
+
+function cameraDistance() {
+  if (!camera || !controls) return 0;
+  return camera.position.distanceTo(controls.target);
+}
+
+function partsBounds(target) {
+  target.makeEmpty();
+  parts.forEach((part) => {
+    if (!part.localBox || part.localBox.isEmpty()) return;
+    _fitBoxPart.copy(part.localBox).translate(part.root.position);
+    target.union(_fitBoxPart);
+  });
+  return target;
+}
+
+function requiredFitDistance() {
+  partsBounds(_fitBox);
+  if (_fitBox.isEmpty()) return 0;
+  _fitBox.getSize(_fitSize);
+  _fitBox.getCenter(_fitCenter);
+  const verticalHalf = camera.fov * DEG * 0.5;
+  const horizontalHalf = Math.atan(Math.tan(verticalHalf) * camera.aspect);
+  // 用视平面上的轴向半径代替包围球：细高机体的包围球会把相机推得过于保守
+  const radiusV = (Math.max(_fitSize.y * 0.5, Math.abs(_fitCenter.y - controls.target.y)) + 400) * 1.14;
+  const radiusH = (Math.max(_fitSize.x, _fitSize.z) * 0.5 + 400) * 1.14;
+  const depth = Math.max(_fitSize.x, _fitSize.z) * 0.45;
+  const needV = radiusV / Math.tan(verticalHalf);
+  const needH = radiusH / Math.tan(horizontalHalf);
+  // 俯视时远端的部件会被透视放大，留 10% 余量
+  return (Math.max(needV, needH) + depth) * 1.10;
+}
+
+function updateCameraFit(dt, now) {
+  if (!cameraFit.active || !camera || !controls) return;
+  // 用户手动缩放后 1 秒内不自动拉远
+  if (now - cameraFit.lastUserZoom < 1) return;
+
+  const k = 1 - Math.exp(-3.5 * Math.min(dt, 0.1));
+
+  // 拆解时视点跟随包围盒中心上抬，复位时回到原始高度
+  let targetY = cameraFit.baseTargetY;
+  if (cameraFit.explodedCount > 0) {
+    partsBounds(_fitBox);
+    if (!_fitBox.isEmpty()) targetY = _fitBox.getCenter(_fitCenter).y;
+  }
+  if (Math.abs(controls.target.y - targetY) > 0.5) controls.target.y += (targetY - controls.target.y) * k;
+  else controls.target.y = targetY;
+
+  let goal = cameraFit.baseDistance || cameraDistance();
+  if (cameraFit.explodedCount > 0) goal = Math.max(goal, requiredFitDistance());
+  goal = clamp(goal, controls.minDistance, controls.maxDistance);
+  cameraFit.goal = goal;
+
+  const current = cameraDistance();
+  _fitDirection.copy(camera.position).sub(controls.target);
+  if (_fitDirection.lengthSq() < 1e-6) {
+    cameraFit.active = false;
+    return;
+  }
+  _fitDirection.normalize();
+
+  const animating = parts.some((part) => part.anim.active);
+  if (Math.abs(current - goal) < 1.5 && !animating) {
+    camera.position.copy(controls.target).addScaledVector(_fitDirection, goal);
+    cameraFit.active = false;
+    return;
+  }
+
+  const next = current + (goal - current) * k;
+  camera.position.copy(controls.target).addScaledVector(_fitDirection, next);
+}
+
+function markUserZoom() {
+  cameraFit.lastUserZoom = clock ? clock.elapsedTime : 0;
 }
 
 function explodeAll() {
@@ -2365,6 +2543,22 @@ function triggerFlash() {
   }, 1120);
 }
 
+function applyInstanceTheme(mesh, light) {
+  if (!mesh.instanceColor || !mesh.userData.baseInstanceColor) return;
+  const array = mesh.instanceColor.array;
+  if (light) {
+    _color.setHex(0xc9ced6);
+    for (let i = 0; i < array.length; i += 3) {
+      array[i] = _color.r;
+      array[i + 1] = _color.g;
+      array[i + 2] = _color.b;
+    }
+  } else {
+    array.set(mesh.userData.baseInstanceColor);
+  }
+  mesh.instanceColor.needsUpdate = true;
+}
+
 function setTheme(theme, silent) {
   state.theme = theme;
   document.body.dataset.theme = theme;
@@ -2383,9 +2577,9 @@ function setTheme(theme, silent) {
   if (hemiLight) {
     hemiLight.color.setHex(light ? 0xffffff : 0x9db9d3);
     hemiLight.groundColor.setHex(light ? 0xc9d2db : 0x0a0d11);
-    hemiLight.intensity = light ? 1.8 : 0.9;
+    hemiLight.intensity = light ? 1.2 : 0.9;
   }
-  if (keyLight) keyLight.intensity = light ? 1.9 : 3.1;
+  if (keyLight) keyLight.intensity = light ? 2.4 : 3.1;
   if (fillCyanLight) fillCyanLight.intensity = light ? 0.5 : 3.6;
   if (fillOrangeLight) fillOrangeLight.intensity = light ? 0.55 : 1.7;
   if (reactorLight) reactorLight.intensity = light ? 0.8 : 2.6;
@@ -2422,7 +2616,16 @@ function setTheme(theme, silent) {
         }
       }
     });
+    // InstancedMesh 的实例色也要跟随主题；原色在构建时已备份
+    part.root.traverse((obj) => {
+      if (obj.isInstancedMesh) applyInstanceTheme(obj, light);
+    });
   });
+
+  lightOutlineMeshes.forEach((mesh) => {
+    mesh.visible = light;
+  });
+  if (contactShadow) contactShadow.visible = light;
 
   applySelectionVisuals();
 
@@ -2488,13 +2691,15 @@ function updateGlow() {
   const selectedId = state.selected;
   parts.forEach((part) => {
     const isSelected = part.id === selectedId;
+    // 选中其他部件时，点火特效应与本件材质按同一系数淡出
+    const dim = Boolean(selectedId) && !isSelected;
     part.materials.forEach((mat) => {
       if (mat.userData.glow && !isSelected) {
         mat.emissiveIntensity = state.ignition * mat.userData.glowMax;
       }
     });
     part.ignitionEffects.forEach((effect) => {
-      effect.material.opacity = effect.max * state.ignition;
+      effect.material.opacity = effect.max * state.ignition * (dim ? 0.45 : 1);
     });
   });
   if (outlineNodes.length) {
@@ -2566,7 +2771,13 @@ function updateVerniers() {
 }
 
 function applyShake() {
-  if (!camera || state.shake <= 0) return;
+  if (!camera) return;
+  // 以本次 controls.update() 之后的干净位置为基准，抖动只作为独立偏移
+  cameraBasePosition.copy(camera.position);
+  if (state.shake <= 0) {
+    _shakeOffset.set(0, 0, 0);
+    return;
+  }
   const k = state.shake / 1.2;
   const amp = 12 * k;
   _shakeOffset.set(
@@ -2574,7 +2785,7 @@ function applyShake() {
     Math.cos(state.time * 63.7) * amp * 0.55,
     Math.sin(state.time * 57.1 + 1.3) * amp,
   );
-  camera.position.add(_shakeOffset);
+  camera.position.copy(cameraBasePosition).add(_shakeOffset);
 }
 
 function updateLabels() {
@@ -2664,7 +2875,10 @@ function tick() {
 
   updateSystems();
   updateExplode();
+  // 先撤销上一帧的抖动偏移，让 OrbitControls 始终基于干净位置计算
+  if (_shakeOffset.lengthSq() > 0) camera.position.sub(_shakeOffset);
   controls.update();
+  updateCameraFit(frameDelta, state.time);
   applyShake();
   camera.updateMatrixWorld();
   updateLabels();
@@ -2773,6 +2987,12 @@ function buildUI() {
   });
 
   const canvas = renderer.domElement;
+
+  // 记录用户手动缩放，自动取景在 1 秒内让位给用户
+  canvas.addEventListener('wheel', markUserZoom, { passive: true });
+  canvas.addEventListener('touchmove', (event) => {
+    if (event.touches.length >= 2) markUserZoom();
+  }, { passive: true });
 
   canvas.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
@@ -3029,6 +3249,7 @@ function init() {
     : { dark: makeEnvironment('dark'), light: makeEnvironment('light') };
   buildScene();
   buildParts();
+  buildLightOutlines();
   buildUI();
   setTheme('dark', true);
 

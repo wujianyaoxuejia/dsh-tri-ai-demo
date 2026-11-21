@@ -1,0 +1,20 @@
+{
+  "task": "T4b",
+  "agent": "claude",
+  "status": "done",
+  "changed_files": ["web/app.js", "handoff/result-T4b.json"],
+  "fixed": [
+    "#1 浅色主题同步重置 InstancedMesh 实例色，深色按构建时备份精确还原",
+    "#2 选中其他部件时 ignitionEffects 与本件材质同系数淡出 0.45，取消选中恢复",
+    "#3 bolt-rings / heat-sink-fins / control-ring 的 explodeDir 水平分量改为与 anchor 径向同向",
+    "#4 发射抖动改用独立 shakeOffset，恢复 basePosition，连续发射不漂移",
+    "#5 拆解/复位时按当前部件包围盒平滑调整相机距离，用户手动缩放后 1 秒内让位",
+    "#6 浅色模式降低环境光 1.2、提高主光 2.4，增加淡 backside 描边与 CanvasTexture 接触影"
+  ],
+  "verify": {
+    "command": "python tools/verify_t4.py --worktree ../wt-web --tag t4b",
+    "exit_code": 0,
+    "summary": "33/33 通过：零外链、部件表、无头渲染与 6 状态截图全部通过"
+  },
+  "notes": "CDP 实测：3 轮主题切换实例色不漂移；ignitionEffects 0.85→0.3825 可恢复；连续发射 3 次相机位移 0；拆解距离 23130.9→44398.9→复位；三处拆解方向与 anchor 径向一致。"
+}
