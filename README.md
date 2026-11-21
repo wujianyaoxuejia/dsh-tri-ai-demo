@@ -1,59 +1,54 @@
-# csvstat
+# dsh-tri-ai-demo
 
-把 CSV 变成机器可读的列统计 JSON。零依赖，Python 3.11 标准库。
+三个 AI 在同一个仓库里配合写代码的实验：**DSH 负责拆任务与验收，Claude Code 负责实现，OpenAI Codex 负责只读评审**。所有交付都走「先写冻结测试 → 实现 → 评审 → 修复 → 人工批准合并」的闭环。
 
-这个仓库是一次多 agent 协作实验：DSH 编排与验收，Claude Code 实现，Codex 评审。
-协作规则见 [AGENTS.md](AGENTS.md)。
+协作规则见 [AGENTS.md](AGENTS.md)，每一轮的任务卡与结果在 [handoff/](handoff/)。
 
-## 用法
+## 仓库里有什么
+
+| 目录 | 是什么 |
+| --- | --- |
+| `csvstat/` | 把 CSV 变成列统计 JSON 的小工具，零依赖，Python 3.11 标准库（[规格](csvstat/README.md)） |
+| `recur/` | RRULE-lite：把 `FREQ=WEEKLY;BYDAY=TU,TH` 这类重复规则展开成具体时刻（[规格](recur/README.md)） |
+| `web/` + `vendor/` | 流浪地球「行星发动机」的 Three.js 交互拆解页（纯前端，零外链） |
+| `orchestrator/` | courier：常驻派发器内核 —— 任务状态机、append-only 信箱、预算上限、崩溃恢复、本地 HUD |
+| `tests/` | 冻结的契约测试（42 个），实现方不许改 |
+| `tools/` | 验收脚本：`verify_t4.py`（页面 33 项）、`deploy-desktop.ps1`（同步到桌面） |
+| `docs/` | [开源调研](docs/opensource-survey.md) 与 [方案 C 设计](docs/design-plan-c.md) |
+| `handoff/` | 三方之间传递的「纸飞机」：任务卡、评审意见、结果回执 |
+
+## 怎么跑
 
 ```bash
+# 全部单元测试（42 个）
+python -m unittest discover -s tests
+
+# 列统计
 python -m csvstat data.csv
+
+# 重复规则展开
+python -m recur --rule "FREQ=WEEKLY;BYDAY=TU,TH" --start 2026-01-05T19:00:00+08:00 --count 4
+
+# 行星发动机页面：ES module + importmap 需要 http，不能直接双击 html
+python -m http.server 8899 --bind 127.0.0.1
+# 打开 http://127.0.0.1:8899/web/
 ```
 
-stdout 只输出一个 JSON 对象，不输出任何其它内容。
-
-## 输出契约
-
-```json
-{
-  "path": "data.csv",
-  "rows": 3,
-  "columns": [
-    {"name": "age", "kind": "numeric", "count": 3, "missing": 0, "min": 3.0, "max": 7.0, "mean": 5.0},
-    {"name": "name", "kind": "text", "count": 3, "missing": 0, "unique": 3, "top": "a"}
-  ]
-}
-```
-
-字段规则：
-
-- `rows`：数据行数，不含表头。
-- `columns`：顺序与表头一致。
-- `count` / `missing`：非缺失值个数 / 缺失值个数，二者之和等于 `rows`。
-- `kind`：所有非缺失值都能解析为浮点数时为 `"numeric"`，否则 `"text"`；**没有非缺失值时为 `"text"`**。
-- numeric 列额外输出 `min`、`max`、`mean`（均为 float），`mean` 四舍五入到 2 位小数。
-- text 列额外输出 `unique`（去重后的值个数）与 `top`（出现次数最多的值）。
-- `top` 出现并列时取字典序最小者；`count == 0` 时 `top` 为 `null`。
-- numeric 列不输出 `unique` / `top`。
-
-## 缺失值
-
-以下内容视为缺失（大小写不敏感，前后空白先去除）：
-
-`""`、`NA`、`N/A`、`null`、`none`
-
-## 畸形输入
-
-- 某行列数少于表头：缺失的列按缺失值计。
-- 某行列数多于表头：多余字段忽略。
-- 文件不存在、为空、或没有表头：退出码 2，stdout 输出 `{"error": "<原因>"}`。
-- 正常退出码为 0。
-
-## 测试
+页面的验收需要本机有 Edge：
 
 ```bash
-python -m unittest discover -s tests -v
+python tools/verify_t4.py      # 33 项：静态检查 + 无头渲染 6 种状态截图
 ```
 
-`tests/test_cli.py` 是冻结契约，实现方不得修改。
+## 页面交互
+
+拖拽旋转、滚轮缩放、点击部件拆解/装回、单击看详情；快捷键 `E` 全部拆解、`R` 复位、`L` 标注开关、`T` 深色/浅色白模、`空格` 点火/熄火、`F` 发射（需先点火）。深链参数 `?theme=light&explode=all&select=reactor-core&ignite=1` 可直接复现某个状态。
+
+## 怎么判断这活干完了
+
+每个任务都有可执行判据，不靠「看起来没问题」：
+
+- csvstat / recur：冻结测试 + 不变量模糊检查（退出码只能是 0/2、stdout 必须单行合法 JSON、错误码必须在规格表内）
+- 行星发动机：33 项脚本验收，其中包括无头浏览器真的渲染 6 种状态
+
+评审由 Codex 以只读模式跑（`codex exec -s read-only`），它能改的东西为零，只能提意见；是否采纳由规格所有者判断，最终合并由人批准。
