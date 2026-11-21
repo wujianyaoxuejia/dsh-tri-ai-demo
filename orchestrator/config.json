@@ -1,0 +1,5 @@
+{
+  "max_task_usd": 3.0,
+  "max_day_usd": 15.0,
+  "max_fix_rounds": 3
+}
