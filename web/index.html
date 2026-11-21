@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="行星发动机 · 重工业交互拆解页（本地 three.js）">
+  <title>行星发动机 · 交互拆解 / PLANETARY ENGINE</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20fill%3D%22%2305070b%22%2F%3E%3Cpath%20d%3D%22M32%206%2055%2019v26L32%2058%209%2045V19Z%22%20fill%3D%22none%22%20stroke%3D%22%2336d9ff%22%20stroke-width%3D%222%22%2F%3E%3Cpath%20d%3D%22M32%2020v24M24%2037h16%22%20stroke%3D%22%23ff8a2a%22%20stroke-width%3D%222%22%2F%3E%3C%2Fsvg%3E">
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "../vendor/three.module.js",
+        "three/addons/controls/OrbitControls.js": "../vendor/OrbitControls.js"
+      }
+    }
+  </script>
+</head>
+<body data-theme="dark" data-state="idle" class="labels-on booting">
+
+  <div id="stage" aria-label="行星发动机三维场景"></div>
+  <div id="vignette" aria-hidden="true"></div>
+  <div id="labels" aria-hidden="true"></div>
+  <div id="flash" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 44 44" role="img">
+          <path d="M22 2.5 39 12v20L22 41.5 5 32V12Z" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M22 10.5 32 16v12l-10 5.5L12 28V16Z" fill="none" stroke="currentColor" stroke-width="1"/>
+          <circle cx="22" cy="22" r="3.2" fill="currentColor"/>
+          <path d="M22 13v6M22 25v6M13.5 17.7l5.2 3M25.3 23.3l5.2 3M30.5 17.7l-5.2 3M18.7 23.3l-5.2 3" stroke="currentColor" stroke-width=".9"/>
+        </svg>
+      </div>
+      <div class="brand-copy">
+        <h1>行星发动机</h1>
+        <p>PLANETARY ENGINE <span>·</span> UEG-001 <span>·</span> 华北一号</p>
+      </div>
+    </div>
+
+    <div class="meters" aria-label="发动机实时参数">
+      <div class="meter meter-power">
+        <div class="meter-top">
+          <span class="meter-label">输出功率</span>
+          <span class="meter-rated">3.2×10¹³ W</span>
+        </div>
+        <div class="meter-row"><b id="hud-power">0 W</b></div>
+        <div class="meter-track"><i id="hud-power-bar"></i></div>
+      </div>
+      <div class="meter meter-temp">
+        <div class="meter-top">
+          <span class="meter-label">核心温度</span>
+          <span class="meter-rated">1.0×10⁸ K</span>
+        </div>
+        <div class="meter-row"><b id="hud-temp">0 K</b></div>
+        <div class="meter-track"><i id="hud-temp-bar"></i></div>
+      </div>
+      <div class="meter meter-thrust">
+        <div class="meter-top">
+          <span class="meter-label">主推力</span>
+          <span class="meter-rated">1.5×10⁹ N</span>
+        </div>
+        <div class="meter-row"><b id="hud-thrust">0 N</b></div>
+        <div class="meter-track"><i id="hud-thrust-bar"></i></div>
+      </div>
+    </div>
+
+    <div class="actions" role="toolbar" aria-label="主操作">
+      <button id="btn-explode" class="btn" type="button" title="全部拆解（E）">
+        <span>全部拆解</span><kbd>E</kbd>
+      </button>
+      <button id="btn-reset" class="btn" type="button" title="全部复位（R）">
+        <span>全部复位</span><kbd>R</kbd>
+      </button>
+      <button id="btn-ignite" class="btn btn-fire" type="button" title="点火 / 熄火（空格）">
+        <span class="btn-text">点火</span><kbd>空格</kbd>
+      </button>
+      <button id="btn-launch" class="btn btn-launch" type="button" title="发射（F）">
+        <span>发射</span><kbd>F</kbd>
+      </button>
+      <button id="btn-labels" class="btn btn-compact is-active" type="button" aria-pressed="true" title="标注开关（L）">
+        <span>标注</span><kbd>L</kbd>
+      </button>
+      <button id="btn-theme" class="btn btn-compact" type="button" title="主题切换（T）">
+        <span class="btn-text">浅色白模</span><kbd>T</kbd>
+      </button>
+    </div>
+  </header>
+
+  <aside id="parts-panel" class="panel parts-panel" aria-label="部件列表">
+    <div class="panel-head">
+      <div>
+        <span class="eyebrow">ASSEMBLY INDEX</span>
+        <h2>部件</h2>
+      </div>
+      <span class="panel-count" id="parts-count">10</span>
+      <button class="panel-close" type="button" data-close="parts" aria-label="关闭部件列表">×</button>
+    </div>
+    <div class="parts-scroll">
+      <ol id="part-list" class="part-list"></ol>
+    </div>
+    <div class="panel-foot">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span id="explode-counter">0 / 10 已拆解</span>
+      <span class="panel-foot-code">SEC.04</span>
+    </div>
+  </aside>
+
+  <aside id="detail-panel" class="panel detail-panel" aria-label="部件详情">
+    <div class="panel-head">
+      <div>
+        <span class="eyebrow">COMPONENT DOSSIER</span>
+        <h2>部件详情</h2>
+      </div>
+      <button class="panel-close" type="button" data-close="detail" aria-label="关闭部件详情">×</button>
+    </div>
+
+    <div id="detail-empty" class="detail-empty">
+      <svg viewBox="0 0 140 160" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="1.1">
+          <path d="M70 8v24M70 136v16"/>
+          <path d="M46 32h48M52 32l-6 22M88 32l6 22M46 54h48"/>
+          <path d="M52 54 40 128h60L88 54Z"/>
+          <path d="M40 128c0 10 7 16 30 16s30-6 30-16"/>
+          <path d="M48 72h44M45 90h50M42 108h56"/>
+          <path d="M70 54v74"/>
+          <circle cx="70" cy="14" r="2.2" fill="currentColor" stroke="none"/>
+        </g>
+        <g fill="currentColor" font-size="6" font-family="monospace" opacity=".65">
+          <text x="98" y="70">R-01</text>
+          <text x="98" y="78">d=10,000</text>
+        </g>
+      </svg>
+      <p class="empty-title">未选中部件</p>
+      <p class="empty-hint">点击场景中的任意部件，或点击左侧部件索引，查看规格、参数与功能。</p>
+      <div class="empty-tip"><span class="live-dot" aria-hidden="true"></span>点击画布中心可从外壳开始拆解</div>
+    </div>
+
+    <div id="detail-body" class="detail-body" hidden>
+      <div class="detail-kicker">
+        <span class="detail-index" id="detail-index">01</span>
+        <span class="detail-id" id="detail-id">base-ring</span>
+        <span class="state-chip" id="detail-state">待机</span>
+      </div>
+      <h3 id="detail-name">基座环</h3>
+      <p class="detail-desc" id="detail-desc"></p>
+
+      <div class="detail-assembly">
+        <span>装配状态</span>
+        <b id="detail-assembly">在位</b>
+      </div>
+
+      <dl class="param-grid" id="detail-params"></dl>
+
+      <div class="detail-actions">
+        <button id="detail-toggle" class="btn btn-small" type="button">拆解部件</button>
+        <span class="detail-hint">点击部件可快速切换</span>
+      </div>
+
+      <div class="detail-system">
+        <span>当前系统状态</span>
+        <b id="detail-system-state">待机</b>
+      </div>
+    </div>
+  </aside>
+
+  <section id="guide-panel" class="panel guide-panel" aria-label="操作引导与快捷键">
+    <div class="panel-head guide-head">
+      <div>
+        <span class="eyebrow">OPERATOR GUIDE</span>
+        <h2>操作引导</h2>
+      </div>
+      <button class="panel-close" type="button" data-close="guide" aria-label="关闭操作引导">×</button>
+    </div>
+    <ol class="guide-steps">
+      <li><span class="step-num">01</span><span><b>拖拽旋转</b><small>按住左键环绕观察整机</small></span></li>
+      <li><span class="step-num">02</span><span><b>滚轮缩放</b><small>推近查看螺栓与管线细节</small></span></li>
+      <li><span class="step-num">03</span><span><b>点击部件拆解</b><small>再次点击同一部件执行复位</small></span></li>
+      <li><span class="step-num">04</span><span><b>点火 → 发射</b><small>需先点火，再启动发射程序</small></span></li>
+    </ol>
+    <div class="shortcut-title">快捷键 / SHORTCUTS</div>
+    <div class="shortcuts">
+      <div><kbd>E</kbd><span>全部拆解</span></div>
+      <div><kbd>R</kbd><span>全部复位</span></div>
+      <div><kbd>L</kbd><span>标注开关</span></div>
+      <div><kbd>T</kbd><span>主题切换</span></div>
+      <div><kbd>空格</kbd><span>点火 / 熄火</span></div>
+      <div><kbd>F</kbd><span>发射</span></div>
+    </div>
+  </section>
+
+  <div id="status-bar" class="status-bar" aria-live="polite">
+    <span class="status-label">系统状态</span>
+    <strong id="status-text">待机</strong>
+    <span class="status-sep" aria-hidden="true"></span>
+    <div class="ignition">
+      <span>点火进度</span>
+      <div class="ignition-track"><i id="ignition-bar"></i></div>
+      <b id="ignition-pct">0%</b>
+    </div>
+  </div>
+
+  <nav id="mobile-bar" aria-label="面板开关">
+    <button type="button" data-drawer="parts"><i aria-hidden="true">▤</i><span>部件</span></button>
+    <button type="button" data-drawer="detail"><i aria-hidden="true">▥</i><span>详情</span></button>
+    <button type="button" data-drawer="guide"><i aria-hidden="true">≡</i><span>引导</span></button>
+  </nav>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <div id="boot" class="boot">
+    <div class="boot-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+    <p class="boot-title">正在装配行星发动机</p>
+    <p class="boot-sub">UEG HEAVY ASSEMBLY · 10 MODULES · 8,192 ANCHORS</p>
+    <div class="boot-track"><i></i></div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

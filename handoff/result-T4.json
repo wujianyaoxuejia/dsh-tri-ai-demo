@@ -1,0 +1,12 @@
+{
+  "task": "T4",
+  "agent": "claude",
+  "status": "done",
+  "changed_files": ["web/index.html", "web/app.js", "web/style.css"],
+  "verify": {
+    "command": "node --input-type=module --check < web/app.js && curl -s -o /dev/null -w \"HTTP %{http_code}\\n\" http://127.0.0.1:8899/web/index.html && grep -q \"new THREE.InstancedMesh\" web/app.js && echo \"check: syntax + http + instancing ok\"",
+    "exit_code": 0,
+    "summary": "syntax OK; HTTP 200; headless Edge/CDP: 10 parts/rows/labels; 8192 bolts InstancedMesh; center click -> casing + explode; 3s ignite (HUD 3.2×10¹³ W / 1.0×10⁸ K), launch (1.5×10⁹ N), light theme; keyboard E/R/L/T/Space/F; 0 console errors."
+  },
+  "notes": "外壳第2/3段做76°剖切露出反应堆/环廊，便于交互观察；轴对称部件拆解方向用「预置径向+向上」近似。软件WebGL自动降采样并省略环境反射，硬件保持全质量；8192螺栓与2400舱室均实例化。全部资源本地生成，无外部依赖。"
+}
