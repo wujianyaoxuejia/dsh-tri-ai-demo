@@ -12,7 +12,8 @@
 | `recur/` | RRULE-lite：把 `FREQ=WEEKLY;BYDAY=TU,TH` 这类重复规则展开成具体时刻（[规格](recur/README.md)） |
 | `web/` + `vendor/` | 流浪地球「行星发动机」的 Three.js 交互拆解页（纯前端，零外链） |
 | `orchestrator/` | courier：常驻派发器内核 —— 任务状态机、append-only 信箱、预算上限、崩溃恢复、本地 HUD |
-| `tests/` | 冻结的契约测试（42 个），实现方不许改 |
+| `tankbrawl/` | 三个 AI 各写一个 bot、在同一套确定性模拟器里真打（[规格](tankbrawl/SPEC.md)、[说明](tankbrawl/README.md)）；`web/tank/` 是逐帧回放页 |
+| `tests/` | 冻结的契约测试（61 个），实现方不许改 |
 | `tools/` | 验收脚本：`verify_t4.py`（页面 33 项）、`deploy-desktop.ps1`（同步到桌面） |
 | `docs/` | [开源调研](docs/opensource-survey.md) 与 [方案 C 设计](docs/design-plan-c.md) |
 | `handoff/` | 三方之间传递的「纸飞机」：任务卡、评审意见、结果回执 |
@@ -20,7 +21,7 @@
 ## 怎么跑
 
 ```bash
-# 全部单元测试（42 个）
+# 全部单元测试（61 个）
 python -m unittest discover -s tests
 
 # 列统计
@@ -32,6 +33,11 @@ python -m recur --rule "FREQ=WEEKLY;BYDAY=TU,TH" --start 2026-01-05T19:00:00+08:
 # 行星发动机页面：ES module + importmap 需要 http，不能直接双击 html
 python -m http.server 8899 --bind 127.0.0.1
 # 打开 http://127.0.0.1:8899/web/
+
+# 坦克大乱斗：先跑一轮比赛，再看回放
+python -m tankbrawl.arena --maps pillars,maze,open --rounds 3 --out runs/tb-001
+python -m http.server 8910 --bind 127.0.0.1
+# 打开 http://127.0.0.1:8910/web/tank/?run=runs/tb-001
 ```
 
 页面的验收需要本机有 Edge：

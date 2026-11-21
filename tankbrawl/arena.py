@@ -70,10 +70,12 @@ def _score(result: dict, tank_ids: list[str]):
 
 
 def run_tournament(bot_names, map_names, rounds, out_dir: Path, log=print) -> dict:
-    bot_names = list(bot_names or [])
-    if len(set(bot_names)) != len(bot_names):
-        raise ValueError("同一场比赛里 bot 名必须唯一（一个 bot 一辆坦克）")
+    if bot_names is not None:
+        requested = list(bot_names)
+        if len(set(requested)) != len(requested):
+            raise ValueError("同一场比赛里 bot 名必须唯一（一个 bot 一辆坦克）")
     bot_map = botmod.load_all(bot_names)
+    bot_names = list(bot_map)
     tank_ids = list(bot_names)
     out_dir.mkdir(parents=True, exist_ok=True)
     matches_dir = out_dir / "matches"
